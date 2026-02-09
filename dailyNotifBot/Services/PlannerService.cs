@@ -11,16 +11,13 @@ namespace TelegramPlannerBot.Services
     {
         private readonly string _dataFile = "plans.json";
         private readonly string _timezonesFile = "timezones.json";
-        private readonly string _templatesFile = "templates.json";
         private List<PlanItem> _plans;
         private Dictionary<long, string> _userTimezones;
-        private List<PlanTemplate> _templates;
 
         public PlannerService()
         {
             LoadPlans();
             LoadTimezones();
-            LoadTemplates();
         }
 
         #region Data Loading/Saving
@@ -51,19 +48,6 @@ namespace TelegramPlannerBot.Services
             }
         }
 
-        private void LoadTemplates()
-        {
-            if (File.Exists(_templatesFile))
-            {
-                var json = File.ReadAllText(_templatesFile);
-                _templates = JsonConvert.DeserializeObject<List<PlanTemplate>>(json) ?? new List<PlanTemplate>();
-            }
-            else
-            {
-                _templates = new List<PlanTemplate>();
-            }
-        }
-
         private void SavePlans()
         {
             var json = JsonConvert.SerializeObject(_plans, Newtonsoft.Json.Formatting.Indented);
@@ -74,12 +58,6 @@ namespace TelegramPlannerBot.Services
         {
             var json = JsonConvert.SerializeObject(_userTimezones, Newtonsoft.Json.Formatting.Indented);
             File.WriteAllText(_timezonesFile, json);
-        }
-
-        private void SaveTemplates()
-        {
-            var json = JsonConvert.SerializeObject(_templates, Newtonsoft.Json.Formatting.Indented);
-            File.WriteAllText(_templatesFile, json);
         }
 
         #endregion
@@ -149,11 +127,7 @@ namespace TelegramPlannerBot.Services
                     ChatId = originalPlan.ChatId,
                     DateTime = currentDate,
                     Description = originalPlan.Description,
-                    Category = originalPlan.Category,
-                    Priority = originalPlan.Priority,
                     NotificationMinutes = originalPlan.NotificationMinutes,
-                    Location = originalPlan.Location,
-                    Notes = originalPlan.Notes,
                     Recurrence = originalPlan.Recurrence,
                     ParentRecurrenceId = originalPlan.Id,
                     RecurrenceEndDate = originalPlan.RecurrenceEndDate
@@ -202,7 +176,6 @@ namespace TelegramPlannerBot.Services
             return _plans
                 .Where(p => p.ChatId == chatId && p.DateTime.Date == date.Date)
                 .OrderBy(p => p.DateTime.TimeOfDay)
-                .ThenBy(p => p.Priority)
                 .ToList();
         }
 
@@ -219,22 +192,11 @@ namespace TelegramPlannerBot.Services
                 .ToList();
         }
 
-        public List<PlanItem> GetPlansByCategory(long chatId, PlanCategory category, DateTime fromDate)
-        {
-            return _plans
-                .Where(p => p.ChatId == chatId && p.Category == category && p.DateTime >= fromDate)
-                .OrderBy(p => p.DateTime)
-                .ToList();
-        }
-
         public List<PlanItem> SearchPlans(long chatId, string query)
         {
             query = query.ToLower();
             return _plans
-                .Where(p => p.ChatId == chatId &&
-                           (p.Description.ToLower().Contains(query) ||
-                            p.Location.ToLower().Contains(query) ||
-                            p.Notes.ToLower().Contains(query)))
+                .Where(p => p.ChatId == chatId && p.Description.ToLower().Contains(query))
                 .OrderBy(p => p.DateTime)
                 .ToList();
         }
@@ -326,89 +288,7 @@ namespace TelegramPlannerBot.Services
 
         #endregion
 
-        #region Templates
-
-        public void AddTemplate(PlanTemplate template)
-        {
-            _templates.Add(template);
-            SaveTemplates();
-        }
-
-        public List<PlanTemplate> GetUserTemplates(long chatId)
-        {
-            return _templates.Where(t => t.ChatId == chatId).ToList();
-        }
-
-        public bool DeleteTemplate(long chatId, string templateId)
-        {
-            var template = _templates.FirstOrDefault(t => t.Id == templateId && t.ChatId == chatId);
-            if (template != null)
-            {
-                _templates.Remove(template);
-                SaveTemplates();
-                return true;
-            }
-            return false;
-        }
-
-        public PlanTemplate? GetTemplateById(long chatId, string templateId)
-        {
-            return _templates.FirstOrDefault(t => t.Id == templateId && t.ChatId == chatId);
-        }
-
-        #endregion
-
         #region Helper Methods
-
-        public static string GetCategoryEmoji(PlanCategory category)
-        {
-            return category switch
-            {
-                PlanCategory.Work => "💼",
-                PlanCategory.Family => "👨‍👩‍👧",
-                PlanCategory.Sport => "🏃",
-                PlanCategory.Health => "🏥",
-                PlanCategory.Shopping => "🛒",
-                PlanCategory.Study => "📚",
-                _ => "📌"
-            };
-        }
-
-        public static string GetCategoryName(PlanCategory category)
-        {
-            return category switch
-            {
-                PlanCategory.Work => "Работа",
-                PlanCategory.Family => "Семья",
-                PlanCategory.Sport => "Спорт",
-                PlanCategory.Health => "Здоровье",
-                PlanCategory.Shopping => "Покупки",
-                PlanCategory.Study => "Учеба",
-                _ => "Другое"
-            };
-        }
-
-        public static string GetPriorityEmoji(PlanPriority priority)
-        {
-            return priority switch
-            {
-                PlanPriority.High => "🔴",
-                PlanPriority.Medium => "🟡",
-                PlanPriority.Low => "🟢",
-                _ => "⚪"
-            };
-        }
-
-        public static string GetPriorityName(PlanPriority priority)
-        {
-            return priority switch
-            {
-                PlanPriority.High => "Высокая",
-                PlanPriority.Medium => "Средняя",
-                PlanPriority.Low => "Низкая",
-                _ => "Не указан"
-            };
-        }
 
         public static string GetRecurrenceName(RecurrenceType recurrence)
         {
@@ -423,27 +303,20 @@ namespace TelegramPlannerBot.Services
 
         public static string FormatPlan(PlanItem plan, bool detailed = false)
         {
-            var priority = GetPriorityEmoji(plan.Priority);
-            var category = GetCategoryEmoji(plan.Category);
-
             if (!detailed)
             {
-                return $"{priority} {category} {plan.DateTime:HH:mm} - {plan.Description}";
+                return $"🕐 {plan.DateTime:HH:mm} - {plan.Description}";
             }
 
-            var result = $"{priority} {category} {plan.Description}\n";
-            result += $"🗓 Дата: {plan.DateTime:dd.MM.yyyy HH:mm}\n";
+            var notifText = plan.NotificationMinutes == 60 ? "1 час" : $"{plan.NotificationMinutes} мин";
 
-            if (!string.IsNullOrEmpty(plan.Location))
-                result += $"📍 Место: {plan.Location}\n";
-
-            if (!string.IsNullOrEmpty(plan.Notes))
-                result += $"📝 Заметки: {plan.Notes}\n";
+            var result = $"📝 {plan.Description}\n";
+            result += $"🗓 {plan.DateTime:dd.MM.yyyy HH:mm}\n";
 
             if (plan.Recurrence != RecurrenceType.None)
-                result += $"🔄 Повтор: {GetRecurrenceName(plan.Recurrence)}\n";
+                result += $"🔄 {GetRecurrenceName(plan.Recurrence)}\n";
 
-            result += $"⏰ Напомнить за {plan.NotificationMinutes} мин";
+            result += $"⏰ Напомнить за {notifText}";
 
             return result;
         }

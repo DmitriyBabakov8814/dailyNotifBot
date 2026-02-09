@@ -5,7 +5,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot;
-using Telegram.Bot.Types;
 using TelegramPlannerBot.Models;
 using TelegramPlannerBot.Services;
 using TelegramPlannerBot.UI;
@@ -33,21 +32,30 @@ namespace TelegramPlannerBot.Handlers
                 return;
             }
 
-            session.TempPlansList = plans;
+            session.TempPlansList = plans.Take(10).ToList();
             session.State = UserState.WaitingForEditSelection;
 
-            var sb = new StringBuilder("✏️ Выберите план для редактирования:\n\n");
-            for (int i = 0; i < Math.Min(plans.Count, 10); i++)
+            var sb = new StringBuilder("✏️ Выберите план:\n\n");
+            for (int i = 0; i < session.TempPlansList.Count; i++)
             {
-                sb.AppendLine($"{i + 1}. {PlannerService.FormatPlan(plans[i])}");
+                sb.AppendLine($"{i + 1}. {PlannerService.FormatPlan(session.TempPlansList[i])}");
             }
             sb.AppendLine("\nВведите номер:");
 
-            await bot.SendMessage(chatId, sb.ToString(), cancellationToken: ct);
+            await bot.SendMessage(chatId, sb.ToString(),
+                replyMarkup: KeyboardHelper.GetCancelKeyboard(),
+                cancellationToken: ct);
         }
 
         public async Task HandlePlanSelection(ITelegramBotClient bot, long chatId, string messageText, UserSession session, CancellationToken ct)
         {
+            if (messageText == "🏠 В меню" || messageText == "❌ Отмена")
+            {
+                session.State = UserState.None;
+                await bot.SendMessage(chatId, "Отменено.", replyMarkup: KeyboardHelper.GetMainKeyboard(), cancellationToken: ct);
+                return;
+            }
+
             if (int.TryParse(messageText, out int planNumber) && planNumber > 0 && planNumber <= session.TempPlansList.Count)
             {
                 session.CurrentPlan = session.TempPlansList[planNumber - 1];
@@ -56,7 +64,7 @@ namespace TelegramPlannerBot.Handlers
                 var plan = session.CurrentPlan;
                 var info = PlannerService.FormatPlan(plan, detailed: true);
 
-                await bot.SendMessage(chatId, $"Текущий план:\n\n{info}\n\nЧто изменить?",
+                await bot.SendMessage(chatId, $"План:\n\n{info}\n\nЧто изменить?",
                     replyMarkup: KeyboardHelper.GetEditFieldKeyboard(), cancellationToken: ct);
             }
             else
@@ -67,11 +75,11 @@ namespace TelegramPlannerBot.Handlers
 
         public async Task HandleFieldChoice(ITelegramBotClient bot, long chatId, string messageText, UserSession session, CancellationToken ct)
         {
-            if (messageText == "❌ Отмена")
+            if (messageText == "❌ Отмена" || messageText == "🏠 В меню")
             {
                 session.State = UserState.None;
                 session.CurrentPlan = null;
-                await bot.SendMessage(chatId, "❌ Отменено.", replyMarkup: KeyboardHelper.GetMainKeyboard(), cancellationToken: ct);
+                await bot.SendMessage(chatId, "Отменено.", replyMarkup: KeyboardHelper.GetMainKeyboard(), cancellationToken: ct);
                 return;
             }
 
@@ -83,19 +91,15 @@ namespace TelegramPlannerBot.Handlers
                 "📅 Дату" => "Введите новую дату (ДД.ММ.ГГГГ):",
                 "🕐 Время" => "Введите новое время (ЧЧ:ММ):",
                 "📝 Описание" => "Введите новое описание:",
-                "🏷 Категорию" => "Выберите категорию:",
-                "⚡ Приоритет" => "Выберите приоритет:",
                 "⏰ Уведомление" => "За сколько напомнить?",
-                "📍 Местоположение" => "Введите место:",
-                "📋 Заметки" => "Введите заметки:",
+                "🔄 Повторение" => "Выберите повторение:",
                 _ => "Введите новое значение:"
             };
 
             var keyboard = messageText switch
             {
-                "🏷 Категорию" => KeyboardHelper.GetCategoryKeyboard(),
-                "⚡ Приоритет" => KeyboardHelper.GetPriorityKeyboard(),
                 "⏰ Уведомление" => KeyboardHelper.GetNotificationTimeKeyboard(),
+                "🔄 Повторение" => KeyboardHelper.GetRecurrenceKeyboard(),
                 _ => KeyboardHelper.GetCancelKeyboard()
             };
 
@@ -104,10 +108,10 @@ namespace TelegramPlannerBot.Handlers
 
         public async Task HandleNewValue(ITelegramBotClient bot, long chatId, string messageText, UserSession session, CancellationToken ct)
         {
-            if (messageText == "❌ Отмена")
+            if (messageText == "❌ Отмена" || messageText == "🏠 В меню")
             {
                 session.State = UserState.None;
-                await bot.SendMessage(chatId, "❌ Отменено.", replyMarkup: KeyboardHelper.GetMainKeyboard(), cancellationToken: ct);
+                await bot.SendMessage(chatId, "Отменено.", replyMarkup: KeyboardHelper.GetMainKeyboard(), cancellationToken: ct);
                 return;
             }
 
@@ -145,24 +149,16 @@ namespace TelegramPlannerBot.Handlers
                         plan.Description = messageText;
                         break;
 
-                    case "🏷 Категорию":
-                        plan.Category = KeyboardHelper.ParseCategory(messageText);
-                        break;
-
-                    case "⚡ Приоритет":
-                        plan.Priority = KeyboardHelper.ParsePriority(messageText);
-                        break;
-
                     case "⏰ Уведомление":
                         plan.NotificationMinutes = KeyboardHelper.ParseNotificationMinutes(messageText);
                         break;
 
-                    case "📍 Местоположение":
-                        plan.Location = messageText;
-                        break;
-
-                    case "📋 Заметки":
-                        plan.Notes = messageText;
+                    case "🔄 Повторение":
+                        plan.Recurrence = KeyboardHelper.ParseRecurrence(messageText);
+                        if (plan.Recurrence != RecurrenceType.None)
+                        {
+                            plan.RecurrenceEndDate = plan.DateTime.AddMonths(3);
+                        }
                         break;
                 }
 
@@ -176,7 +172,9 @@ namespace TelegramPlannerBot.Handlers
             }
             catch (Exception ex)
             {
-                await bot.SendMessage(chatId, $"❌ Ошибка: {ex.Message}", cancellationToken: ct);
+                await bot.SendMessage(chatId, $"❌ Ошибка: {ex.Message}",
+                    replyMarkup: KeyboardHelper.GetMainKeyboard(), cancellationToken: ct);
+                session.State = UserState.None;
             }
         }
     }

@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using Telegram.Bot.Types.ReplyMarkups;
 using TelegramPlannerBot.Models;
 
@@ -83,40 +85,13 @@ namespace TelegramPlannerBot.UI
             };
         }
 
-        public static ReplyKeyboardMarkup GetCategoryKeyboard()
-        {
-            return new ReplyKeyboardMarkup(new[]
-            {
-                new KeyboardButton[] { "💼 Работа", "👨‍👩‍👧 Семья", "🏃 Спорт" },
-                new KeyboardButton[] { "🏥 Здоровье", "🛒 Покупки", "📚 Учеба" },
-                new KeyboardButton[] { "📌 Другое", "⏭ Пропустить" }
-            })
-            {
-                ResizeKeyboard = true,
-                OneTimeKeyboard = true
-            };
-        }
-
-        public static ReplyKeyboardMarkup GetPriorityKeyboard()
-        {
-            return new ReplyKeyboardMarkup(new[]
-            {
-                new KeyboardButton[] { "🔴 Высокая", "🟡 Средняя", "🟢 Низкая" },
-                new KeyboardButton[] { "⏭ Пропустить" }
-            })
-            {
-                ResizeKeyboard = true,
-                OneTimeKeyboard = true
-            };
-        }
-
         public static ReplyKeyboardMarkup GetNotificationTimeKeyboard()
         {
             return new ReplyKeyboardMarkup(new[]
             {
-                new KeyboardButton[] { "⏰ 5 минут", "⏰ 10 минут", "⏰ 15 минут" },
-                new KeyboardButton[] { "⏰ 30 минут", "⏰ 1 час" },
-                new KeyboardButton[] { "⏭ Пропустить" }
+                new KeyboardButton[] { "⏰ 5 минут", "⏰ 10 минут" },
+                new KeyboardButton[] { "⏰ 15 минут", "⏰ 30 минут" },
+                new KeyboardButton[] { "⏰ 1 час", "❌ Отмена" }
             })
             {
                 ResizeKeyboard = true,
@@ -142,22 +117,8 @@ namespace TelegramPlannerBot.UI
             return new ReplyKeyboardMarkup(new[]
             {
                 new KeyboardButton[] { "📅 Дату", "🕐 Время" },
-                new KeyboardButton[] { "📝 Описание", "🏷 Категорию" },
-                new KeyboardButton[] { "⚡ Приоритет", "⏰ Уведомление" },
-                new KeyboardButton[] { "📍 Местоположение", "📋 Заметки" },
-                new KeyboardButton[] { "❌ Отмена" }
-            })
-            {
-                ResizeKeyboard = true,
-                OneTimeKeyboard = true
-            };
-        }
-
-        public static ReplyKeyboardMarkup GetSkipOrCancelKeyboard()
-        {
-            return new ReplyKeyboardMarkup(new[]
-            {
-                new KeyboardButton[] { "⏭ Пропустить", "❌ Отмена" }
+                new KeyboardButton[] { "📝 Описание", "⏰ Уведомление" },
+                new KeyboardButton[] { "🔄 Повторение", "❌ Отмена" }
             })
             {
                 ResizeKeyboard = true,
@@ -191,7 +152,7 @@ namespace TelegramPlannerBot.UI
             if (firstRow.Count > 0)
                 buttons.Add(firstRow.ToArray());
 
-            // Остальные даты (кроме сегодня и завтра)
+            // Остальные даты
             var otherDates = dates.Where(d => d.Date != today.Date && d.Date != today.AddDays(1).Date).ToList();
             for (int i = 0; i < otherDates.Count; i += 2)
             {
@@ -202,7 +163,6 @@ namespace TelegramPlannerBot.UI
                 buttons.Add(row.ToArray());
             }
 
-            // Кнопка назад
             buttons.Add(new KeyboardButton[] { "🏠 В меню" });
 
             return new ReplyKeyboardMarkup(buttons)
@@ -225,24 +185,6 @@ namespace TelegramPlannerBot.UI
                 ResizeKeyboard = true,
                 OneTimeKeyboard = true
             };
-        }
-
-        public static PlanCategory ParseCategory(string text)
-        {
-            if (text.Contains("Работа")) return PlanCategory.Work;
-            if (text.Contains("Семья")) return PlanCategory.Family;
-            if (text.Contains("Спорт")) return PlanCategory.Sport;
-            if (text.Contains("Здоровье")) return PlanCategory.Health;
-            if (text.Contains("Покупки")) return PlanCategory.Shopping;
-            if (text.Contains("Учеба")) return PlanCategory.Study;
-            return PlanCategory.Other;
-        }
-
-        public static PlanPriority ParsePriority(string text)
-        {
-            if (text.Contains("Высокая")) return PlanPriority.High;
-            if (text.Contains("Низкая")) return PlanPriority.Low;
-            return PlanPriority.Medium;
         }
 
         public static int ParseNotificationMinutes(string text)

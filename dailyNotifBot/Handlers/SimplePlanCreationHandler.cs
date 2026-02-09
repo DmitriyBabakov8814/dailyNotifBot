@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot;
-using Telegram.Bot.Types;
 using TelegramPlannerBot.Models;
 using TelegramPlannerBot.Services;
 using TelegramPlannerBot.UI;
@@ -97,7 +96,7 @@ namespace TelegramPlannerBot.Handlers
             session.State = UserState.WaitingForDescription;
 
             await bot.SendMessage(chatId,
-                $"✅ {session.CurrentPlan.DateTime:dd.MM.yyyy HH:mm}\n\n📝 Описание плана:",
+                $"✅ {session.CurrentPlan.DateTime:dd.MM.yyyy HH:mm}\n\n📝 Описание:",
                 replyMarkup: KeyboardHelper.GetCancelKeyboard(),
                 cancellationToken: ct);
         }
@@ -112,10 +111,25 @@ namespace TelegramPlannerBot.Handlers
             }
 
             session.CurrentPlan!.Description = messageText;
+            session.State = UserState.WaitingForNotificationTime;
 
-            // Сразу спрашиваем про повтор
+            await bot.SendMessage(chatId, "⏰ За сколько напомнить?",
+                replyMarkup: KeyboardHelper.GetNotificationTimeKeyboard(), cancellationToken: ct);
+        }
+
+        public async Task HandleNotificationTime(ITelegramBotClient bot, long chatId, string messageText, UserSession session, CancellationToken ct)
+        {
+            if (messageText == "❌ Отмена" || messageText == "🏠 В меню")
+            {
+                session.State = UserState.None;
+                await bot.SendMessage(chatId, "Отменено.", replyMarkup: KeyboardHelper.GetMainKeyboard(), cancellationToken: ct);
+                return;
+            }
+
+            session.CurrentPlan!.NotificationMinutes = KeyboardHelper.ParseNotificationMinutes(messageText);
             session.State = UserState.WaitingForRecurrence;
-            await bot.SendMessage(chatId, "🔄 Повторять план?",
+
+            await bot.SendMessage(chatId, "🔄 Повторять?",
                 replyMarkup: KeyboardHelper.GetRecurrenceKeyboard(), cancellationToken: ct);
         }
 
@@ -140,12 +154,19 @@ namespace TelegramPlannerBot.Handlers
             // Сохраняем план
             _plannerService.AddPlan(session.CurrentPlan!);
 
-            var recurrenceInfo = session.CurrentPlan!.Recurrence != RecurrenceType.None
-                ? $"\n🔄 {PlannerService.GetRecurrenceName(session.CurrentPlan.Recurrence)} (создано на 3 мес.)"
+            var notifText = session.CurrentPlan!.NotificationMinutes == 60
+                ? "1 час"
+                : $"{session.CurrentPlan.NotificationMinutes} мин";
+
+            var recurrenceInfo = session.CurrentPlan.Recurrence != RecurrenceType.None
+                ? $"\n🔄 {PlannerService.GetRecurrenceName(session.CurrentPlan.Recurrence)}"
                 : "";
 
             await bot.SendMessage(chatId,
-                $"✅ План создан!\n\n{PlannerService.FormatPlan(session.CurrentPlan!, detailed: false)}{recurrenceInfo}",
+                $"✅ План создан!\n\n" +
+                $"📅 {session.CurrentPlan.DateTime:dd.MM.yyyy HH:mm}\n" +
+                $"📝 {session.CurrentPlan.Description}\n" +
+                $"⏰ Напомнить за {notifText}{recurrenceInfo}",
                 replyMarkup: KeyboardHelper.GetMainKeyboard(), cancellationToken: ct);
 
             session.State = UserState.None;

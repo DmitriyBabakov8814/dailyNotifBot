@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Telegram.Bot;
@@ -21,7 +20,6 @@ namespace TelegramPlannerBot.Bot
         private readonly PlannerService _plannerService;
         private readonly Dictionary<long, UserSession> _sessions;
 
-        // Handlers
         private readonly SimplePlanCreationHandler _creationHandler;
         private readonly PlanEditHandler _editHandler;
         private readonly CommandHandler _commandHandler;
@@ -58,7 +56,6 @@ namespace TelegramPlannerBot.Bot
             var me = await _botClient.GetMe();
             Console.WriteLine($"✅ Бот @{me.Username} запущен!");
 
-            // Запуск фоновых задач
             _ = Task.Run(() => DailyNotificationTask(cts.Token));
             _ = Task.Run(() => EventNotificationTask(cts.Token));
 
@@ -85,7 +82,6 @@ namespace TelegramPlannerBot.Bot
                 var chatId = message.Chat.Id;
                 var session = GetSession(chatId);
 
-                // Обработка голосовых
                 if (message.Voice != null)
                 {
                     await bot.SendMessage(chatId,
@@ -98,7 +94,6 @@ namespace TelegramPlannerBot.Bot
 
                 Console.WriteLine($"[{chatId}] {messageText}");
 
-                // Обработка состояний
                 await HandleStateAsync(bot, chatId, messageText, session, ct);
             }
             catch (Exception ex)
@@ -107,7 +102,7 @@ namespace TelegramPlannerBot.Bot
                 try
                 {
                     await bot.SendMessage(update.Message!.Chat.Id,
-                        "❌ Произошла ошибка. Попробуйте еще раз или вернитесь в меню.",
+                        "❌ Произошла ошибка. Попробуйте еще раз.",
                         replyMarkup: KeyboardHelper.GetMainKeyboard(),
                         cancellationToken: ct);
                 }
@@ -119,7 +114,6 @@ namespace TelegramPlannerBot.Bot
         {
             try
             {
-                // Глобальная кнопка "В меню"
                 if (text == "🏠 Главное меню" || text == "🏠 В меню")
                 {
                     session.State = UserState.None;
@@ -129,7 +123,6 @@ namespace TelegramPlannerBot.Bot
                     return;
                 }
 
-                // Обработка состояний
                 switch (session.State)
                 {
                     case UserState.WaitingForTimezone:
@@ -148,11 +141,14 @@ namespace TelegramPlannerBot.Bot
                         await _creationHandler.HandleDescription(bot, chatId, text, session, ct);
                         return;
 
+                    case UserState.WaitingForNotificationTime:
+                        await _creationHandler.HandleNotificationTime(bot, chatId, text, session, ct);
+                        return;
+
                     case UserState.WaitingForRecurrence:
                         await _creationHandler.HandleRecurrence(bot, chatId, text, session, ct);
                         return;
 
-                    // Редактирование
                     case UserState.WaitingForEditSelection:
                         await _editHandler.HandlePlanSelection(bot, chatId, text, session, ct);
                         return;
@@ -165,26 +161,23 @@ namespace TelegramPlannerBot.Bot
                         await _editHandler.HandleNewValue(bot, chatId, text, session, ct);
                         return;
 
-                    // Удаление
                     case UserState.WaitingForDeleteConfirmation:
                         await _deleteHandler.HandleDeleteChoice(bot, chatId, text, session, ct);
                         return;
 
-                    // Поиск
                     case UserState.WaitingForSearchQuery:
                         await _commandHandler.HandleSearch(bot, chatId, text, session, ct);
                         return;
                 }
 
-                // Обработка команд
                 await HandleCommandAsync(bot, chatId, text, session, ct);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Ошибка в HandleStateAsync: {ex.Message}");
+                Console.WriteLine($"❌ HandleStateAsync: {ex.Message}");
                 session.State = UserState.None;
                 await bot.SendMessage(chatId,
-                    "❌ Произошла ошибка. Возвращаю в главное меню.",
+                    "❌ Ошибка. Возврат в меню.",
                     replyMarkup: KeyboardHelper.GetMainKeyboard(),
                     cancellationToken: ct);
             }
@@ -194,7 +187,6 @@ namespace TelegramPlannerBot.Bot
         {
             try
             {
-                // СНАЧАЛА проверяем точные совпадения команд
                 switch (text)
                 {
                     case "/start":
@@ -241,22 +233,21 @@ namespace TelegramPlannerBot.Bot
                         return;
                 }
 
-                // ПОТОМ проверяем выбор даты (ТОЛЬКО если это действительно выбор даты)
-                if (text.StartsWith("📅 ") && (text.Contains("Сегодня") || text.Contains("Завтра") || text.Contains(".") && text.Length > 10))
+                // Проверка на выбор даты
+                if (text.StartsWith("📅 ") && (text.Contains("Сегодня") || text.Contains("Завтра") || (text.Contains(".") && text.Length > 10)))
                 {
                     await _commandHandler.HandleDateSelection(bot, chatId, text, ct);
                     return;
                 }
 
-                // Неизвестная команда
                 await bot.SendMessage(chatId, "❓ Неизвестная команда.",
                     replyMarkup: KeyboardHelper.GetMainKeyboard(), cancellationToken: ct);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Ошибка в HandleCommandAsync: {ex.Message}");
+                Console.WriteLine($"❌ HandleCommandAsync: {ex.Message}");
                 await bot.SendMessage(chatId,
-                    "❌ Произошла ошибка. Попробуйте еще раз.",
+                    "❌ Ошибка. Попробуйте еще раз.",
                     replyMarkup: KeyboardHelper.GetMainKeyboard(),
                     cancellationToken: ct);
             }
@@ -314,7 +305,7 @@ namespace TelegramPlannerBot.Bot
             session.CurrentPlan = new PlanItem { ChatId = chatId };
 
             var now = _plannerService.GetUserCurrentTime(chatId);
-            await bot.SendMessage(chatId, "📝 Новый план\n\n1/4: Дата",
+            await bot.SendMessage(chatId, "📝 Новый план\n\n1/5: Дата",
                 replyMarkup: KeyboardHelper.GetDateQuickSelectKeyboard(now), cancellationToken: ct);
         }
 
@@ -396,8 +387,9 @@ namespace TelegramPlannerBot.Bot
                         try
                         {
                             var timeUntil = (plan.DateTime - now).TotalMinutes;
-                            var message = $"⏰ Напоминание\n\n";
-                            message += $"{PlannerService.FormatPlan(plan, detailed: true)}\n\n";
+                            var notifText = plan.NotificationMinutes == 60 ? "1 час" : $"{plan.NotificationMinutes} мин";
+
+                            var message = $"⏰ Напоминание\n\n{PlannerService.FormatPlan(plan, detailed: true)}\n\n";
 
                             if (timeUntil > 1)
                                 message += $"⏱ Начнётся через {(int)timeUntil} мин";
