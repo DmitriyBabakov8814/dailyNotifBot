@@ -11,6 +11,9 @@ namespace TelegramPlannerBot.Services
     {
         private readonly string _dataFile = "plans.json";
         private readonly string _timezonesFile = "timezones.json";
+        private readonly object _plansLock = new object();
+        private readonly object _timezonesLock = new object();
+
         private List<PlanItem> _plans;
         private Dictionary<long, string> _userTimezones;
 
@@ -24,40 +27,90 @@ namespace TelegramPlannerBot.Services
 
         private void LoadPlans()
         {
-            if (File.Exists(_dataFile))
+            lock (_plansLock)
             {
-                var json = File.ReadAllText(_dataFile);
-                _plans = JsonConvert.DeserializeObject<List<PlanItem>>(json) ?? new List<PlanItem>();
-            }
-            else
-            {
-                _plans = new List<PlanItem>();
+                if (File.Exists(_dataFile))
+                {
+                    try
+                    {
+                        var json = File.ReadAllText(_dataFile);
+                        _plans = JsonConvert.DeserializeObject<List<PlanItem>>(json) ?? new List<PlanItem>();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ERROR: Не удалось загрузить plans.json: {ex.Message}");
+                        _plans = new List<PlanItem>();
+
+                        // Backup поврежденного файла
+                        if (File.Exists(_dataFile))
+                        {
+                            var backupPath = $"plans_corrupted_{DateTime.Now:yyyyMMddHHmmss}.json";
+                            File.Copy(_dataFile, backupPath);
+                            Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] INFO: Создан бэкап: {backupPath}");
+                        }
+                    }
+                }
+                else
+                {
+                    _plans = new List<PlanItem>();
+                }
             }
         }
 
         private void LoadTimezones()
         {
-            if (File.Exists(_timezonesFile))
+            lock (_timezonesLock)
             {
-                var json = File.ReadAllText(_timezonesFile);
-                _userTimezones = JsonConvert.DeserializeObject<Dictionary<long, string>>(json) ?? new Dictionary<long, string>();
-            }
-            else
-            {
-                _userTimezones = new Dictionary<long, string>();
+                if (File.Exists(_timezonesFile))
+                {
+                    try
+                    {
+                        var json = File.ReadAllText(_timezonesFile);
+                        _userTimezones = JsonConvert.DeserializeObject<Dictionary<long, string>>(json) ?? new Dictionary<long, string>();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ERROR: Не удалось загрузить timezones.json: {ex.Message}");
+                        _userTimezones = new Dictionary<long, string>();
+                    }
+                }
+                else
+                {
+                    _userTimezones = new Dictionary<long, string>();
+                }
             }
         }
 
         private void SavePlans()
         {
-            var json = JsonConvert.SerializeObject(_plans, Newtonsoft.Json.Formatting.Indented);
-            File.WriteAllText(_dataFile, json);
+            lock (_plansLock)
+            {
+                try
+                {
+                    var json = JsonConvert.SerializeObject(_plans, Formatting.Indented);
+                    File.WriteAllText(_dataFile, json);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ERROR: Не удалось сохранить plans.json: {ex.Message}");
+                }
+            }
         }
 
         private void SaveTimezones()
         {
-            var json = JsonConvert.SerializeObject(_userTimezones, Newtonsoft.Json.Formatting.Indented);
-            File.WriteAllText(_timezonesFile, json);
+            lock (_timezonesLock)
+            {
+                try
+                {
+                    var json = JsonConvert.SerializeObject(_userTimezones, Formatting.Indented);
+                    File.WriteAllText(_timezonesFile, json);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ERROR: Не удалось сохранить timezones.json: {ex.Message}");
+                }
+            }
         }
 
         #endregion
@@ -66,13 +119,19 @@ namespace TelegramPlannerBot.Services
 
         public void SetUserTimezone(long chatId, string timezoneId)
         {
-            _userTimezones[chatId] = timezoneId;
-            SaveTimezones();
+            lock (_timezonesLock)
+            {
+                _userTimezones[chatId] = timezoneId;
+                SaveTimezones();
+            }
         }
 
         public string GetUserTimezone(long chatId)
         {
-            return _userTimezones.ContainsKey(chatId) ? _userTimezones[chatId] : "Russian Standard Time";
+            lock (_timezonesLock)
+            {
+                return _userTimezones.ContainsKey(chatId) ? _userTimezones[chatId] : "Russian Standard Time";
+            }
         }
 
         public DateTime GetUserCurrentTime(long chatId)
@@ -95,14 +154,17 @@ namespace TelegramPlannerBot.Services
 
         public void AddPlan(PlanItem plan)
         {
-            _plans.Add(plan);
-
-            if (plan.Recurrence != RecurrenceType.None)
+            lock (_plansLock)
             {
-                CreateRecurringPlans(plan);
-            }
+                _plans.Add(plan);
 
-            SavePlans();
+                if (plan.Recurrence != RecurrenceType.None)
+                {
+                    CreateRecurringPlans(plan);
+                }
+
+                SavePlans();
+            }
         }
 
         private void CreateRecurringPlans(PlanItem originalPlan)
@@ -139,32 +201,41 @@ namespace TelegramPlannerBot.Services
 
         public bool UpdatePlan(PlanItem plan)
         {
-            var existingPlan = _plans.FirstOrDefault(p => p.Id == plan.Id && p.ChatId == plan.ChatId);
-            if (existingPlan != null)
+            lock (_plansLock)
             {
-                var index = _plans.IndexOf(existingPlan);
-                _plans[index] = plan;
-                SavePlans();
-                return true;
+                var existingPlan = _plans.FirstOrDefault(p => p.Id == plan.Id && p.ChatId == plan.ChatId);
+                if (existingPlan != null)
+                {
+                    var index = _plans.IndexOf(existingPlan);
+                    _plans[index] = plan;
+                    SavePlans();
+                    return true;
+                }
+                return false;
             }
-            return false;
         }
 
         public bool DeletePlan(long chatId, string planId)
         {
-            var plan = _plans.FirstOrDefault(p => p.Id == planId && p.ChatId == chatId);
-            if (plan != null)
+            lock (_plansLock)
             {
-                _plans.Remove(plan);
-                SavePlans();
-                return true;
+                var plan = _plans.FirstOrDefault(p => p.Id == planId && p.ChatId == chatId);
+                if (plan != null)
+                {
+                    _plans.Remove(plan);
+                    SavePlans();
+                    return true;
+                }
+                return false;
             }
-            return false;
         }
 
         public PlanItem? GetPlanById(long chatId, string planId)
         {
-            return _plans.FirstOrDefault(p => p.Id == planId && p.ChatId == chatId);
+            lock (_plansLock)
+            {
+                return _plans.FirstOrDefault(p => p.Id == planId && p.ChatId == chatId);
+            }
         }
 
         #endregion
@@ -173,10 +244,13 @@ namespace TelegramPlannerBot.Services
 
         public List<PlanItem> GetPlansForDate(long chatId, DateTime date)
         {
-            return _plans
-                .Where(p => p.ChatId == chatId && p.DateTime.Date == date.Date)
-                .OrderBy(p => p.DateTime.TimeOfDay)
-                .ToList();
+            lock (_plansLock)
+            {
+                return _plans
+                    .Where(p => p.ChatId == chatId && p.DateTime.Date == date.Date)
+                    .OrderBy(p => p.DateTime.TimeOfDay)
+                    .ToList();
+            }
         }
 
         public List<PlanItem> GetTodayPlans(long chatId, DateTime today)
@@ -186,69 +260,87 @@ namespace TelegramPlannerBot.Services
 
         public List<PlanItem> GetAllUpcomingPlans(long chatId, DateTime fromDate)
         {
-            return _plans
-                .Where(p => p.ChatId == chatId && p.DateTime >= fromDate)
-                .OrderBy(p => p.DateTime)
-                .ToList();
+            lock (_plansLock)
+            {
+                return _plans
+                    .Where(p => p.ChatId == chatId && p.DateTime >= fromDate)
+                    .OrderBy(p => p.DateTime)
+                    .ToList();
+            }
         }
 
         public List<PlanItem> SearchPlans(long chatId, string query)
         {
-            query = query.ToLower();
-            return _plans
-                .Where(p => p.ChatId == chatId && p.Description.ToLower().Contains(query))
-                .OrderBy(p => p.DateTime)
-                .ToList();
+            lock (_plansLock)
+            {
+                query = query.ToLower();
+                return _plans
+                    .Where(p => p.ChatId == chatId && p.Description.ToLower().Contains(query))
+                    .OrderBy(p => p.DateTime)
+                    .ToList();
+            }
         }
 
         public List<DateTime> GetDatesWithPlans(long chatId, DateTime fromDate)
         {
-            return _plans
-                .Where(p => p.ChatId == chatId && p.DateTime >= fromDate)
-                .Select(p => p.DateTime.Date)
-                .Distinct()
-                .OrderBy(d => d)
-                .Take(10)
-                .ToList();
+            lock (_plansLock)
+            {
+                return _plans
+                    .Where(p => p.ChatId == chatId && p.DateTime >= fromDate)
+                    .Select(p => p.DateTime.Date)
+                    .Distinct()
+                    .OrderBy(d => d)
+                    .Take(10)
+                    .ToList();
+            }
         }
 
         public int DeletePlansByDate(long chatId, DateTime date)
         {
-            var plansToDelete = _plans.Where(p => p.ChatId == chatId && p.DateTime.Date == date.Date).ToList();
-            foreach (var plan in plansToDelete)
+            lock (_plansLock)
             {
-                _plans.Remove(plan);
+                var plansToDelete = _plans.Where(p => p.ChatId == chatId && p.DateTime.Date == date.Date).ToList();
+                foreach (var plan in plansToDelete)
+                {
+                    _plans.Remove(plan);
+                }
+                SavePlans();
+                return plansToDelete.Count;
             }
-            SavePlans();
-            return plansToDelete.Count;
         }
 
         public int DeleteRecurringPlans(long chatId, string parentId)
         {
-            var plansToDelete = _plans.Where(p => p.ChatId == chatId &&
-                (p.Id == parentId || p.ParentRecurrenceId == parentId)).ToList();
-            foreach (var plan in plansToDelete)
+            lock (_plansLock)
             {
-                _plans.Remove(plan);
+                var plansToDelete = _plans.Where(p => p.ChatId == chatId &&
+                    (p.Id == parentId || p.ParentRecurrenceId == parentId)).ToList();
+                foreach (var plan in plansToDelete)
+                {
+                    _plans.Remove(plan);
+                }
+                SavePlans();
+                return plansToDelete.Count;
             }
-            SavePlans();
-            return plansToDelete.Count;
         }
 
         public int DeleteMultiplePlans(long chatId, List<string> planIds)
         {
-            var deleted = 0;
-            foreach (var id in planIds)
+            lock (_plansLock)
             {
-                var plan = _plans.FirstOrDefault(p => p.Id == id && p.ChatId == chatId);
-                if (plan != null)
+                var deleted = 0;
+                foreach (var id in planIds)
                 {
-                    _plans.Remove(plan);
-                    deleted++;
+                    var plan = _plans.FirstOrDefault(p => p.Id == id && p.ChatId == chatId);
+                    if (plan != null)
+                    {
+                        _plans.Remove(plan);
+                        deleted++;
+                    }
                 }
+                SavePlans();
+                return deleted;
             }
-            SavePlans();
-            return deleted;
         }
 
         #endregion
@@ -257,33 +349,42 @@ namespace TelegramPlannerBot.Services
 
         public List<PlanItem> GetPendingNotifications(DateTime currentTime)
         {
-            var notifications = new List<PlanItem>();
-
-            foreach (var plan in _plans.Where(p => !p.IsNotified))
+            lock (_plansLock)
             {
-                var timeDiff = (plan.DateTime - currentTime).TotalMinutes;
-                if (timeDiff <= plan.NotificationMinutes && timeDiff >= 0)
-                {
-                    notifications.Add(plan);
-                }
-            }
+                var notifications = new List<PlanItem>();
 
-            return notifications;
+                foreach (var plan in _plans.Where(p => !p.IsNotified))
+                {
+                    var timeDiff = (plan.DateTime - currentTime).TotalMinutes;
+                    if (timeDiff <= plan.NotificationMinutes && timeDiff >= 0)
+                    {
+                        notifications.Add(plan);
+                    }
+                }
+
+                return notifications;
+            }
         }
 
         public void MarkAsNotified(string planId)
         {
-            var plan = _plans.FirstOrDefault(p => p.Id == planId);
-            if (plan != null)
+            lock (_plansLock)
             {
-                plan.IsNotified = true;
-                SavePlans();
+                var plan = _plans.FirstOrDefault(p => p.Id == planId);
+                if (plan != null)
+                {
+                    plan.IsNotified = true;
+                    SavePlans();
+                }
             }
         }
 
         public List<long> GetAllChatIds()
         {
-            return _plans.Select(p => p.ChatId).Distinct().ToList();
+            lock (_plansLock)
+            {
+                return _plans.Select(p => p.ChatId).Distinct().ToList();
+            }
         }
 
         #endregion
@@ -305,13 +406,15 @@ namespace TelegramPlannerBot.Services
         {
             if (!detailed)
             {
-                return $"🕐 {plan.DateTime:HH:mm} - {plan.Description}";
+                // Краткий формат: время + описание (БЕЗ повторяющегося эмодзи)
+                return $"{plan.DateTime:HH:mm} - {plan.Description}";
             }
 
+            // Детальный формат
             var notifText = plan.NotificationMinutes == 60 ? "1 час" : $"{plan.NotificationMinutes} мин";
 
             var result = $"📝 {plan.Description}\n";
-            result += $"🗓 {plan.DateTime:dd.MM.yyyy HH:mm}\n";
+            result += $"📅 {plan.DateTime:dd.MM.yyyy HH:mm}\n";
 
             if (plan.Recurrence != RecurrenceType.None)
                 result += $"🔄 {GetRecurrenceName(plan.Recurrence)}\n";

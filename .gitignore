@@ -416,3 +416,33 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+##########################################################
+# Telegram Bot Specific Files
+##########################################################
+
+# Config with secrets (ВАЖНО!)
+appsettings.json
+appsettings.*.json
+!appsettings.example.json
+
+# Bot data files
+plans.json
+timezones.json
+templates.json
+plans_corrupted_*.json
+
+# Backups
+backup_*.json
+*_backup.json
+
+# Linux deployment files (для VPS)
+publish/
+
+# Logs
+logs/
+
+# Database files (если будете использовать SQLite)
+*.db
+*.db-shm
+*.db-wal

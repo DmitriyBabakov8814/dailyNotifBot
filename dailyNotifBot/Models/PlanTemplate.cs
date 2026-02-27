@@ -9,11 +9,7 @@ namespace TelegramPlannerBot.Models
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public TimeSpan Time { get; set; }
-        public PlanCategory Category { get; set; } = PlanCategory.Other;
-        public PlanPriority Priority { get; set; } = PlanPriority.Medium;
         public RecurrenceType Recurrence { get; set; } = RecurrenceType.None;
         public int NotificationMinutes { get; set; } = 10;
-        public string Location { get; set; } = string.Empty;
-        public string Notes { get; set; } = string.Empty;
     }
 }

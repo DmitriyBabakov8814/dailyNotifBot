@@ -1,0 +1,27 @@
+[Unit]
+Description=Telegram Planner Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=telegrambot
+Group=telegrambot
+WorkingDirectory=/home/telegrambot/TelegramPlannerBot/publish
+ExecStart=/usr/bin/dotnet /home/telegrambot/TelegramPlannerBot/publish/TelegramPlannerBot.dll
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegrambot
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Resource limits
+MemoryMax=512M
+TasksMax=100
+
+[Install]
+WantedBy=multi-user.target
