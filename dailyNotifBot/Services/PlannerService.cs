@@ -347,7 +347,8 @@ namespace TelegramPlannerBot.Services
 
         #region Notifications
 
-        public List<PlanItem> GetPendingNotifications(DateTime currentTime)
+        // ✅ ИСПРАВЛЕННЫЙ МЕТОД - принимает chatId для конвертации в локальное время
+        public List<PlanItem> GetPendingNotifications()
         {
             lock (_plansLock)
             {
@@ -355,10 +356,23 @@ namespace TelegramPlannerBot.Services
 
                 foreach (var plan in _plans.Where(p => !p.IsNotified))
                 {
-                    var timeDiff = (plan.DateTime - currentTime).TotalMinutes;
-                    if (timeDiff <= plan.NotificationMinutes && timeDiff >= 0)
+                    // Получаем текущее время пользователя в его часовом поясе
+                    var userNow = GetUserCurrentTime(plan.ChatId);
+
+                    // Сравниваем локальное время плана с локальным временем пользователя
+                    var timeDiff = (plan.DateTime - userNow).TotalMinutes;
+
+                    // Если осталось от 0 до NotificationMinutes минут - отправляем
+                    if (timeDiff <= plan.NotificationMinutes && timeDiff >= -1)
                     {
                         notifications.Add(plan);
+
+                        // Логирование для отладки
+                        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] DEBUG: План {plan.Description}");
+                        Console.WriteLine($"  Время плана: {plan.DateTime:HH:mm:ss}");
+                        Console.WriteLine($"  Текущее время пользователя: {userNow:HH:mm:ss}");
+                        Console.WriteLine($"  Разница: {timeDiff:F1} мин");
+                        Console.WriteLine($"  Напомнить за: {plan.NotificationMinutes} мин");
                     }
                 }
 

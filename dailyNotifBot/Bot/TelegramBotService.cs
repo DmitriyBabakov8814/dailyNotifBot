@@ -510,10 +510,11 @@ namespace TelegramPlannerBot.Bot
             {
                 try
                 {
-                    await Task.Delay(TimeSpan.FromMinutes(1), ct);
+                    // Проверяем каждые 30 секунд (более частая проверка)
+                    await Task.Delay(TimeSpan.FromSeconds(30), ct);
 
-                    var now = DateTime.UtcNow;
-                    var pendingPlans = _plannerService.GetPendingNotifications(now);
+                    // Теперь метод сам конвертирует время для каждого пользователя
+                    var pendingPlans = _plannerService.GetPendingNotifications();
 
                     foreach (var plan in pendingPlans)
                     {
@@ -527,13 +528,15 @@ namespace TelegramPlannerBot.Bot
 
                             if (timeUntil > 1)
                                 message += $"Начнётся через {(int)timeUntil} мин";
+                            else if (timeUntil > 0)
+                                message += "Начнётся меньше чем через минуту!";
                             else
                                 message += "Начинается сейчас!";
 
                             await SafeSendMessage(_botClient, plan.ChatId, message, null, ct);
                             _plannerService.MarkAsNotified(plan.Id);
 
-                            LogInfo($"Отправлено напоминание [{plan.ChatId}]: {plan.Description}");
+                            LogInfo($"Отправлено напоминание [{plan.ChatId}]: {plan.Description} (за {(int)timeUntil} мин)");
                         }
                         catch (Exception ex)
                         {
@@ -548,7 +551,7 @@ namespace TelegramPlannerBot.Bot
                 catch (Exception ex)
                 {
                     LogError($"EventNotificationTask: {ex.Message}", ex);
-                    await Task.Delay(TimeSpan.FromMinutes(1), ct);
+                    await Task.Delay(TimeSpan.FromSeconds(30), ct);
                 }
             }
 
